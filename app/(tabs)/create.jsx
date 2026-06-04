@@ -1,199 +1,267 @@
-import { View, Text, FlatList, StyleSheet, SafeAreaView, TouchableOpacity } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
-import { TextInput } from 'react-native-paper';
-import CustomButton from '../../components/CustomButton';
-import Icon from 'react-native-vector-icons/MaterialIcons'; // Import icons from MaterialIcons
+import React, { useState, useRef } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  SafeAreaView,
+  StatusBar,
+  Animated,
+} from 'react-native';
 
-const Create = () => {
-  const [form, setForm] = useState({ task: '' }); // For adding tasks
-  const [tasks, setTasks] = useState([]); // To store the tasks
-  const [editingIndex, setEditingIndex] = useState(null); // To keep track of task being edited
-  const [editedTask, setEditedTask] = useState(''); // To store the task being edited
+import { useLocalSearchParams } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
+import DayCard from '../../components/DayCard';
+import MapPanel from '../../components/MapPanel';
+import AddTaskModal from '../../components/AddTaskModal';
+
+import {
+  parseLocaleDate,
+  buildDateRange,
+  formatHeaderDates,
+  dateKey,
+} from '../../utils/dateHelpers';
+
+import {
+  fetchRoute,
+  searchPlaces,
+  handleUserLocationUpdate,
+} from '../../utils/mapHelpers';
+
+import { styles } from '../../styles/createStyles';
+import { images } from '../../constants'; // adjust if needed
+
+const MAP_COLLAPSED = 120;
+const MAP_EXPANDED = 420;
+
+export default function Create() {
+  const { task } = useLocalSearchParams();
+
+const match = task?.match(/^(.*?)\s*\((.*?)\s*[→\-—to]+\s*(.*?)\)$/i);
+
+const tripName = match ? match[1] : task || 'My Trip';
+const startDate = match ? parseLocaleDate(match[2]) : null;
+const endDate = match ? parseLocaleDate(match[3]) : null;
+
+const allDates =
+  startDate && endDate ? buildDateRange(startDate, endDate) : [];
+
+const headerLabel =
+  startDate && endDate
+    ? formatHeaderDates(startDate, endDate)
+    : 'Select Dates';
+
+  // ───────────────────────────────────────────────────────────────
+  // State
+  // ───────────────────────────────────────────────────────────────
+  const [tasksByDate, setTasksByDate] = useState({});
+  const [cardState, setCardState] = useState({});
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalDate, setModalDate] = useState(null);
+  const [newTaskName, setNewTaskName] = useState('');
+
+  // Map
+  const mapHeight = useRef(new Animated.Value(MAP_COLLAPSED)).current;
+  const [mapOpen, setMapOpen] = useState(false);
+  const cameraRef = useRef(null);
+
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [destinationCoord, setDestinationCoord] = useState(null);
+  const [routeGeoJSON, setRouteGeoJSON] = useState(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
+
+  // ───────────────────────────────────────────────────────────────
+  // Map expand/collapse
+  // ───────────────────────────────────────────────────────────────
+  const expandMap = () => {
+    setMapOpen(true);
+    Animated.spring(mapHeight, {
+      toValue: MAP_EXPANDED,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const collapseMap = () => {
+    setMapOpen(false);
+    Animated.spring(mapHeight, {
+      toValue: MAP_COLLAPSED,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  // ───────────────────────────────────────────────────────────────
+  // Card press logic (collapsed ↔ edit)
+  // ───────────────────────────────────────────────────────────────
+  const handleCardPress = (dateObj) => {
+    const key = dateKey(dateObj);
+    const tasks = tasksByDate[key] || [];
+    const current = cardState[key];
+
+    if (!current) {
+      setCardState((prev) => ({ ...prev, [key]: 'edit' }));
+      if (!mapOpen) expandMap();
+
+      const firstLoc = tasks.find((t) => t.location)?.location;
+      if (firstLoc && cameraRef.current) {
+        setDestinationCoord(firstLoc);
+        cameraRef.current.setCamera({
+          centerCoordinate: [firstLoc.lon, firstLoc.lat],
+          zoomLevel: 14,
+          animationDuration: 800,
+        });
+        if (currentLocation) fetchRoute(currentLocation, firstLoc);
+      }
+      return;
+    }
+
+    if (current === 'edit') {
+      setCardState((prev) => ({ ...prev, [key]: undefined }));
+    }
+  };
+
+  // ───────────────────────────────────────────────────────────────
+  // Task modal
+  // ───────────────────────────────────────────────────────────────
+  const openAddModal = (dateObj) => {
+    setModalDate(dateObj);
+    setModalVisible(true);
+  };
 
   const handleAddTask = () => {
-    if (form.task.trim() !== '') {
-      setTasks([form.task, ...tasks]); // Add the task to the top of the list
-      setForm({ task: '' }); // Clear the input field
+    if (!newTaskName.trim() || !modalDate) return;
+    const key = dateKey(modalDate);
+
+    setTasksByDate((prev) => ({
+      ...prev,
+      [key]: [
+        ...(prev[key] || []),
+        { id: Date.now(), name: newTaskName.trim(), location: null },
+      ],
+    }));
+
+    setNewTaskName('');
+    setModalVisible(false);
+  };
+
+  // ───────────────────────────────────────────────────────────────
+  // Search + routing
+  // ───────────────────────────────────────────────────────────────
+  const onSearchChange = async (text) => {
+    setSearchQuery(text);
+
+    if (!text.trim()) {
+      setShowResults(false);
+      setSearchResults([]);
+      return;
+    }
+
+    const results = await searchPlaces(text);
+    setSearchResults(results);
+    setShowResults(true);
+  };
+
+  const handleSelectResult = async (item) => {
+    const lat = parseFloat(item.lat);
+    const lon = parseFloat(item.lon);
+
+    setDestinationCoord({ lat, lon });
+    setSearchQuery(item.display_name);
+    setShowResults(false);
+
+    if (cameraRef.current) {
+      cameraRef.current.setCamera({
+        centerCoordinate: [lon, lat],
+        zoomLevel: 14,
+        animationDuration: 800,
+      });
+    }
+
+    if (currentLocation) {
+      const geometry = await fetchRoute(currentLocation, { lat, lon });
+      if (geometry) {
+        setRouteGeoJSON({
+          type: 'Feature',
+          geometry,
+          properties: {},
+        });
+      }
     }
   };
 
-  const handleDeleteTask = (index) => {
-    const updatedTasks = tasks.filter((_, i) => i !== index);
-    setTasks(updatedTasks);
+  const onUserLocationUpdate = (loc) => {
+    const parsed = handleUserLocationUpdate(loc);
+    if (parsed) setCurrentLocation(parsed);
   };
 
-  const handleEditTask = (index) => {
-    setEditingIndex(index); // Set the editing index to the task being edited
-    setEditedTask(tasks[index]); // Populate the task text for editing
-  };
-
-  const handleSaveTask = () => {
-    if (editedTask.trim() !== '') {
-      const updatedTasks = tasks.map((task, index) =>
-        index === editingIndex ? editedTask : task
-      );
-      setTasks(updatedTasks);
-      setEditingIndex(null); // Reset the editing state after saving
-      setEditedTask(''); // Clear the edited task
-    }
-  };
-
-  const handleCancelEdit = () => {
-    setEditingIndex(null); // Cancel editing
-    setEditedTask(''); // Reset the task text
-  };
-
-  const styles = StyleSheet.create({
-    input: {
-      height: 40,
-      borderWidth: 1,
-      paddingHorizontal: 10,
-      marginBottom: 15,
-      borderRadius: 5,
-      width: '80%', // Same width for the Add Task input field
-    },
-    addTaskInput: {
-      height: 40,
-      borderWidth: 1,
-      padding: 10,
-      marginBottom: 15,
-      borderRadius: 5,
-      width: '80%', // Same width for the Add Task input field
-    },
-    container: {
-      flex: 2,
-      justifyContent: 'center',
-    },
-    inner: {
-      height: '100%',
-      padding: 24,
-      flex: 1,
-      justifyContent: 'center',
-      marginTop: 10,
-    },
-    taskText: {
-      fontSize: 16,
-      paddingVertical: 10,
-      paddingHorizontal: 10,
-      backgroundColor: '#f1f1f1',
-      marginBottom: 5,
-      borderRadius: 5,
-      flex: 1,
-      justifyContent: 'center',
-      width: '80%', // Keep the task text width the same as the input field
-    },
-    taskListContainer: {
-      width: '100%',
-      marginBottom: 20,
-    },
-    taskActions: {
-      flexDirection: 'row',
-      alignItems: 'center',
-    },
-    actionIcon: {
-      marginLeft: 10,
-      color: '#4caf50', // Edit button color (green)
-      fontSize: 24,
-    },
-    deleteIcon: {
-      marginLeft: 10,
-      color: '#ff6347', // Delete button color (red)
-      fontSize: 24,
-    },
-    taskContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 10,
-      backgroundColor: '#fff',
-      paddingVertical: 10,
-      paddingHorizontal: 15,
-      borderRadius: 5,
-      borderWidth: 1,
-      borderColor: '#ddd',
-    },
-  });
-
+  // ───────────────────────────────────────────────────────────────
+  // Render
+  // ───────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView className="bg-primary h-full justify-center">
-      <View style={styles.inner}>
-        {/* Task list */}
-        <View style={styles.taskListContainer}>
-          <FlatList
-            data={tasks}
-            renderItem={({ item, index }) => (
-              <View style={styles.taskContainer}>
-                {/* Task Text */}
-                {editingIndex === index ? (
-                  <TextInput
-                    value={editedTask}
-                    onChangeText={(text) => setEditedTask(text)}
-                    style={styles.input} // The size remains consistent with the task text
-                    autoFocus
-                    keyboardType="default"
-                  />
-                ) : (
-                  <Text style={styles.taskText}>{item}</Text> // Display task text
-                )}
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaView style={styles.container}>
+        <StatusBar style="dark" />
 
-                {/* Task actions: Edit and Delete icons */}
-                <View style={styles.taskActions}>
-                  {editingIndex === index ? (
-                    <>
-                      <TouchableOpacity
-                        onPress={handleSaveTask} // Save the edited task
-                      >
-                        <Icon name="check" style={[styles.actionIcon, { color: 'green' }]} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={handleCancelEdit} // Cancel editing
-                      >
-                        <Icon name="close" style={[styles.actionIcon, { color: 'red' }]} />
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity
-                        onPress={() => handleEditTask(index)} // Start editing
-                      >
-                        <Icon name="edit" style={styles.actionIcon} />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleDeleteTask(index)} // Delete task
-                      >
-                        <Icon name="delete" style={styles.deleteIcon} />
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              </View>
-            )}
-            keyExtractor={(item, index) => index.toString()}
-          />
-        </View>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.header}>
+            <Text style={styles.headerDates}>{headerLabel}</Text>
+            <Text style={styles.headerTitle}>{tripName}</Text>
+          </View>
 
-        <Text className="text-base text-gray-200 font-pmedium mb-5">Add event</Text>
+          {allDates.map((d) => {
+            const key = dateKey(d);
+            return (
+              <DayCard
+                key={key}
+                dateObj={d}
+                tasks={tasksByDate[key] || []}
+                state={cardState[key]}
+                images={images}
+                onPress={() => handleCardPress(d)}
+                openAddModal={openAddModal}
+                collapseEdit={() =>
+                  setCardState((prev) => ({ ...prev, [key]: undefined }))
+                }
+              />
+            );
+          })}
+        </ScrollView>
 
-        {/* Input field for adding a new task */}
-        <TextInput
-          onChangeText={(e) => setForm({ task: e })}
-          value={form.task}
-          style={styles.addTaskInput} // This is where I applied the original "Add Task" size
-          placeholder="Enter a task"
+        <MapPanel
+          mapOpen={mapOpen}
+          mapHeight={mapHeight}
+          expandMap={expandMap}
+          collapseMap={collapseMap}
+          cameraRef={cameraRef}
+          currentLocation={currentLocation}
+          destinationCoord={destinationCoord}
+          routeGeoJSON={routeGeoJSON}
+          searchQuery={searchQuery}
+          searchResults={searchResults}
+          showResults={showResults}
+          onSearchChange={onSearchChange}
+          onSelectResult={handleSelectResult}
+          onUserLocationUpdate={onUserLocationUpdate}
         />
 
-        {/* Add Task Button */}
-        <CustomButton
-          title="Add Task"
-          handlePress={handleAddTask} // Add the task when clicked
-          containerStyles="mt-5 h-[40px] mb-5"
+        <AddTaskModal
+          visible={modalVisible}
+          modalDate={modalDate}
+          newTaskName={newTaskName}
+          setNewTaskName={setNewTaskName}
+          onClose={() => {
+            setModalVisible(false);
+            setNewTaskName('');
+          }}
+          onSave={handleAddTask}
         />
-
-        <StatusBar backgroundColor="#161622" style="light" />
-      </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
-};
-
-export default Create;
+}

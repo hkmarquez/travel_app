@@ -14,30 +14,24 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.oterra",
+      "bundleIdentifier": "com.marquez.nomadia",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "We need your location for mapping features.",
-        "MGLMapboxAccessToken": "YOUR_MAPBOX_ACCESS_TOKEN"
+        "NSLocationWhenInUseUsageDescription": "We need your location for mapping features."
       }
     },
     "android": {
-      "package": "com.anonymous.oterra",
-      "config": {
-        "googleMaps": {
-          "apiKey": "AIzaSyAroT3uGDrF7dOmFB-71LQiAfpx9MyyIYU"
-        }
-      },
+      "package": "com.marquez.nomadia",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ],
-      "gradleProperties": {
-        "MGLMapboxAccessToken": "YOUR_MAPBOX_ACCESS_TOKEN"
-      }
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.READ_CALENDAR",
+        "android.permission.WRITE_CALENDAR"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -51,7 +45,13 @@
           "calendarPermission": "The app needs to access your calendar."
         }
       ],
-      "@react-native-mapbox-gl/maps"
-    ]
+      "expo-font"
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "318c11c9-befa-448c-8583-f78d200a36ec"
+      }
+    }
   }
 }

@@ -1,167 +1,205 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { View, SafeAreaView, Text, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 
-// Get the screen dimensions for full width/height
 const { width, height } = Dimensions.get('window');
+const CELL_SIZE = Math.floor(width / 7);
+
+const HEADER_HEIGHT = 40 + 20 + 34 + 20;
+const WEEKDAY_HEIGHT = 30;
+const GRID_ROWS = 6;
+const CELL_HEIGHT = Math.floor((height - 84 - HEADER_HEIGHT - WEEKDAY_HEIGHT) / GRID_ROWS);
 
 const Calendar = () => {
-  const [currentMonth, setCurrentMonth] = useState(new Date().getMonth()); // Current month
-  const [currentYear, setCurrentYear] = useState(new Date().getFullYear()); // Current year
+  const today = new Date();
+  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
+  const [currentYear, setCurrentYear] = useState(today.getFullYear());
 
-  const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const daysOfWeek = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
-  const getDaysInMonth = (month, year) => {
-    // Get the number of days in the month
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const getFirstDayOfMonth = (month, year) => {
-    // Get the first day of the month (0 = Sunday, 1 = Monday, etc.)
-    return new Date(year, month, 1).getDay();
-  };
+  const getDaysInMonth = (m, y) => new Date(y, m + 1, 0).getDate();
+  const getFirstDay = (m, y) => new Date(y, m, 1).getDay();
+  const getDaysInPrevMonth = (m, y) => new Date(y, m, 0).getDate();
 
   const generateCalendar = () => {
     const daysInMonth = getDaysInMonth(currentMonth, currentYear);
-    const firstDayOfMonth = getFirstDayOfMonth(currentMonth, currentYear); // Get the first day of the month
-
-    // Create an array of days with empty slots before the 1st of the month
-    const calendarDays = Array(firstDayOfMonth).fill(null).concat(
-      Array.from({ length: daysInMonth }, (_, i) => i + 1)
-    );
-
-    // Ensure the calendar grid is filled to the last row (so it has 6 rows max)
-    while (calendarDays.length < 42) {
-      calendarDays.push(null);
+    const firstDay = getFirstDay(currentMonth, currentYear);
+    const daysInPrev = getDaysInPrevMonth(currentMonth, currentYear);
+    const cells = [];
+    for (let i = 0; i < firstDay; i++) {
+      cells.push({ day: daysInPrev - firstDay + 1 + i, type: 'prev' });
     }
-
-    return calendarDays;
+    for (let d = 1; d <= daysInMonth; d++) {
+      cells.push({ day: d, type: 'current' });
+    }
+    const remaining = 42 - cells.length;
+    for (let i = 1; i <= remaining; i++) {
+      cells.push({ day: i, type: 'next' });
+    }
+    return cells;
   };
 
-  const handleNextMonth = () => {
-    if (currentMonth === 11) {
-      setCurrentMonth(0); // January
-      setCurrentYear(currentYear + 1); // Move to next year
-    } else {
-      setCurrentMonth(currentMonth + 1); // Move to the next month
-    }
+  const handlePrev = () => {
+    if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(y => y - 1); }
+    else setCurrentMonth(m => m - 1);
   };
 
-  const handlePreviousMonth = () => {
-    if (currentMonth === 0) {
-      setCurrentMonth(11); // December
-      setCurrentYear(currentYear - 1); // Move to previous year
-    } else {
-      setCurrentMonth(currentMonth - 1); // Move to the previous month
-    }
+  const handleNext = () => {
+    if (currentMonth === 11) { setCurrentMonth(0); setCurrentYear(y => y + 1); }
+    else setCurrentMonth(m => m + 1);
   };
 
-  const calendarDays = generateCalendar();
+  const isToday = (day, type) =>
+    type === 'current' &&
+    day === today.getDate() &&
+    currentMonth === today.getMonth() &&
+    currentYear === today.getFullYear();
+
+  const monthLabel = new Date(currentYear, currentMonth).toLocaleString('default', {
+    month: 'long', year: 'numeric',
+  });
+
+  const cells = generateCalendar();
 
   return (
-    <View style={styles.container}>
-      {/* Calendar Header with Navigation Buttons */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={handlePreviousMonth} style={styles.navButton}>
-          <Text style={styles.navButtonText}>{'<'}</Text>
-        </TouchableOpacity>
-        <Text style={styles.monthText}>
-          {`${new Date(currentYear, currentMonth).toLocaleString('default', {
-            month: 'long',
-          })} ${currentYear}`}
-        </Text>
-        <TouchableOpacity onPress={handleNextMonth} style={styles.navButton}>
-          <Text style={styles.navButtonText}>{'>'}</Text>
-        </TouchableOpacity>
-      </View>
+    <SafeAreaView className="bg-primary h-full justify-center">
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={handlePrev} style={styles.navBtn}>
+            <Text style={styles.navText}>‹</Text>
+          </TouchableOpacity>
+          <Text style={styles.monthLabel}>{monthLabel}</Text>
+          <TouchableOpacity onPress={handleNext} style={styles.navBtn}>
+            <Text style={styles.navText}>›</Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Weekdays Header */}
-      <View style={styles.weekdays}>
-        {daysOfWeek.map((day, index) => (
-          <Text key={index} style={styles.weekdayText}>
-            {day}
-          </Text>
-        ))}
-      </View>
+        {/* Weekday headers */}
+        <View style={styles.weekdays}>
+          {daysOfWeek.map((d, i) => (
+            <Text key={i} style={styles.weekdayText}>{d}</Text>
+          ))}
+        </View>
 
-      {/* Calendar Grid */}
-      <View style={styles.calendarGrid}>
-        {calendarDays.map((day, index) => (
-          <View
-            key={index}
-            style={[
-              styles.dayContainer,
-              !day && { backgroundColor: 'transparent' }, // If no day, make it transparent
-            ]}
-          >
-            {day && <Text style={styles.dayText}>{day}</Text>}
-          </View>
-        ))}
+        {/* Day grid */}
+        <View style={styles.grid}>
+          {cells.map((cell, i) => (
+            <TouchableOpacity
+              key={i}
+              style={styles.cellWrapper}
+              onPress={() => {
+                if (cell.type === 'current') {
+                  const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`;
+                  router.push({ pathname: '/home', params: { date: dateStr } });
+                }
+              }}
+              activeOpacity={cell.type === 'current' ? 0.7 : 1}
+            >
+              <View style={[styles.cell, isToday(cell.day, cell.type) && styles.todayCell]}>
+                <Text style={[
+                  styles.dayText,
+                  cell.type !== 'current' && styles.mutedText,
+                  isToday(cell.day, cell.type) && styles.todayText,
+                ]}>
+                  {cell.day}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
-    </View>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
     paddingTop: 40,
-    paddingHorizontal: 0,
-    paddingBottom: 84, // Reserve space for the tab bar
+    paddingBottom: 84,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    paddingHorizontal: 16,
+    marginBottom: 20,
   },
-  navButton: {
-    paddingHorizontal: 50,
+  navBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 0.5,
+    borderColor: '#ddd',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  navButtonText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
+  navText: {
+    fontSize: 22,
+    color: '#fff',
+    lineHeight: 26,
   },
-  monthText: {
-    fontSize: 24,
-    fontWeight: 'bold',
+  monthLabel: {
+    fontSize: 21,
+    fontWeight: '500',
+    color: '#fff',
   },
   weekdays: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 5,
+    height: WEEKDAY_HEIGHT,
+    alignItems: 'center',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#eee',
+    marginBottom: 0,
   },
   weekdayText: {
-    fontSize: 14,
-    fontWeight: 'bold',
+    width: CELL_SIZE,
     textAlign: 'center',
-    width: width / 7, // Make it fit 7 days across
+    fontSize: 11,
+    fontWeight: '500',
+    color: '#aaa',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  calendarGrid: {
+  grid: {
+    flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-start',
-    marginTop: 5,
+    alignContent: 'stretch',
   },
-  dayContainer: {
-    width: width / 7, // Full width divided by 7 days
-    height: (height - 300) / 6, // Adjust height based on available height (after header and weekday headers)
-    justifyContent: 'flex-start', // Align items to the top
-    alignItems: 'flex-start', // Align items to the top left corner
-    backgroundColor: '#f0f0f0',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    position: 'relative', // For positioning the day number absolutely
+  cellWrapper: {
+    width: CELL_SIZE,
+    height: CELL_HEIGHT,
+    borderRightWidth: 0.5,
+    borderBottomWidth: 0.5,
+    borderColor: '#f0f0f0',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    paddingTop: 2,
+  },
+  cell: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 5,
+  },
+  todayCell: {
+    backgroundColor: '#534AB7',
   },
   dayText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    position: 'absolute', // Absolute positioning for the top-left corner
-    top: 5,
-    left: 5,
+    fontSize: 13,
+    color: '#fff',
+  },
+  mutedText: {
+    color: '#3a3a4a',
+  },
+  todayText: {
+    color: '#fff',
+    fontWeight: '500',
   },
 });
-
 
 export default Calendar;

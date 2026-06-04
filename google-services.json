@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "361327212421",
+    "project_id": "ottera-3c093",
+    "storage_bucket": "ottera-3c093.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:361327212421:android:69ce7e14270876e1b776ec",
+        "android_client_info": {
+          "package_name": "com.marquez.nomadia"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAXJm_ynZaX43rNfr5N4jXT_ABeX10etMU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
